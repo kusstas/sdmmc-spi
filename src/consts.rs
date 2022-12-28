@@ -5,7 +5,7 @@ pub mod commands {
     pub const ACMD_FLAG: u8 = 0x80;
     /// GO_IDLE_STATE - init card in spi mode if CS low.
     pub const CMD0: u8 = CMD_BASE;
-    /// SEND_IF_COND - verify SD Memory Card interface operating condition.*/.
+    /// SEND_IF_COND - verify SD Memory Card interface operating condition.
     pub const CMD8: u8 = CMD_BASE + 8;
     /// SEND_CSD - read the Card Specific Data (CSD register).
     pub const CMD9: u8 = CMD_BASE + 9;
