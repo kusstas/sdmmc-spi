@@ -11,4 +11,9 @@ spin = "^0.9.4"
 diskio = "^0.1.0"
 bitfield = "^0.14.0"
 size = "^0.4.1"
-crc-any = "^2.4.3"
+log = { version = "^0.4.17", default-features = false, optional = true }
+defmt = { version = "^0.3.2", optional = true }
+
+[features]
+defmt-log = [ "defmt" ]
+default = [ "log" ]

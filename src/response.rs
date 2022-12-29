@@ -13,4 +13,4 @@ bitfield! {
 }
 
 /// R3 OCR payload.
-pub type R3Ocr = [u8; 4];
+pub type R3OcrPayload = [u8; 4];
