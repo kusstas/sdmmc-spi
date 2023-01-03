@@ -1,9 +1,21 @@
-use spin::relax::RelaxStrategy;
-use timestamp_source::{Delay, Timestamp};
+/// Represents config for [`SdMmcSpi`](crate::SdMmcSpi).
+pub trait SdMmcSpiConfig {
+    /// Max attempts to send command.
+    const CMD_MAX_ATTEMPTS: usize;
+    /// Max attempts to read R1.
+    const READ_R1_ATTEMPTS: usize;
+    /// Max attempts to enter SPI mode.
+    const ENTER_SPI_MODE_ATTEMPTS: usize;
+    /// Count of dummy cycles for delay.
+    const DELAY_DUMMY_CYCLES: usize;
+}
 
-trait SdMmcSpiConfig {
-    type Timestamp: Timestamp;
-    type RelaxStrategy: RelaxStrategy;
+/// Default implementation of [`SdMmcSpiConfig`](crate::SdMmcSpiConfig).
+pub struct DefaultSdMmcSpiConfig;
 
-    const DELAY: Delay<Self::Timestamp, Self::RelaxStrategy>;
+impl SdMmcSpiConfig for DefaultSdMmcSpiConfig {
+    const CMD_MAX_ATTEMPTS: usize = 200;
+    const READ_R1_ATTEMPTS: usize = 100;
+    const ENTER_SPI_MODE_ATTEMPTS: usize = 10;
+    const DELAY_DUMMY_CYCLES: usize = 10;
 }

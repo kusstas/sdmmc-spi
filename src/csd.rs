@@ -1,3 +1,5 @@
+use crate::consts::BLOCK_SIZE_U64;
+
 use bitfield::bitfield;
 use size::{consts::KiB, Size};
 
@@ -79,12 +81,7 @@ pub trait CapacityProvider {
     fn card_capacity(&self) -> Size;
 
     /// Returns the card capacity in 512-byte blocks.
-    fn card_capacity_blocks(&self) -> usize;
-}
-
-impl CsdV2 {
-    /// Data block size.
-    const BLOCK_SIZE: usize = 512;
+    fn card_capacity_blocks(&self) -> u64;
 }
 
 impl From<CsdData> for CsdV1 {
@@ -102,24 +99,23 @@ impl From<CsdData> for CsdV2 {
 impl CapacityProvider for CsdV1 {
     fn card_capacity(&self) -> Size {
         Size::from_bytes(
-            (u64::from(self.device_size()) + 1)
-                << (self.device_size_multiplier() + self.read_block_length() + 2),
+            self.device_size() << (self.device_size_multiplier() + self.read_block_length() + 2),
         )
     }
 
-    fn card_capacity_blocks(&self) -> usize {
-        (usize::from(self.device_size()) + 1)
+    fn card_capacity_blocks(&self) -> u64 {
+        (u64::from(self.device_size()) + 1)
             << (self.device_size_multiplier() + self.read_block_length() - 7)
     }
 }
 
 impl CapacityProvider for CsdV2 {
     fn card_capacity(&self) -> Size {
-        Size::from_bytes(self.card_capacity_blocks() * Self::BLOCK_SIZE)
+        Size::from_bytes(self.card_capacity_blocks() * BLOCK_SIZE_U64)
     }
 
-    fn card_capacity_blocks(&self) -> usize {
-        ((self.device_size() + 1) as usize) * (KiB as usize)
+    fn card_capacity_blocks(&self) -> u64 {
+        ((self.device_size() + 1) as u64) * (KiB as u64)
     }
 }
 
@@ -131,7 +127,7 @@ impl CapacityProvider for Csd {
         }
     }
 
-    fn card_capacity_blocks(&self) -> usize {
+    fn card_capacity_blocks(&self) -> u64 {
         match self {
             Csd::V1(csd) => csd.card_capacity_blocks(),
             Csd::V2(csd) => csd.card_capacity_blocks(),

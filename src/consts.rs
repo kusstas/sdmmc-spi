@@ -43,4 +43,15 @@ pub mod tokens {
     pub const DATA_RES_MASK: u8 = 0x1F;
     /// Write data accepted token.
     pub const DATA_RES_ACCEPTED: u8 = 0x05;
+    /// Available response token.
+    pub const AVAILABLE: u8 = 0xFF;
+    /// CMD8 Status token.
+    pub const CMD8_STATUS: u8 = 0xAA;
+    /// CMD58 OCR token.
+    pub const CMD58_OCR: u8 = 0xC0;
 }
+
+/// Block size in usize representation.
+pub const BLOCK_SIZE: usize = 512;
+/// Block size in u64 representation.
+pub const BLOCK_SIZE_U64: u64 = BLOCK_SIZE as u64;
