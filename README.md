@@ -13,7 +13,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sdmmc-spi = "0.1.0"
+sdmmc-spi = "0.1.1"
 ```
 
 ## Documentation

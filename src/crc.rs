@@ -18,7 +18,7 @@ pub fn crc16(data: &[u8]) -> u16 {
     let mut crc = 0;
     for &byte in data {
         crc = ((crc >> 8) & 0xFF) | (crc << 8);
-        crc ^= u16::from(byte);
+        crc ^= byte as u16;
         crc ^= (crc & 0xFF) >> 4;
         crc ^= crc << 12;
         crc ^= (crc & 0xFF) << 5;

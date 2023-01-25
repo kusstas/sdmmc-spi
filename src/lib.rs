@@ -23,7 +23,7 @@ use crate::{
 };
 
 use core::{cell::RefCell, marker::PhantomData};
-use defmt::{error, info, warn};
+use defmt::{error, info, warn, Format};
 use embedded_hal::blocking::spi::Transfer;
 use switch_hal::OutputSwitch;
 
@@ -62,12 +62,15 @@ pub enum Error<T, S> {
 }
 
 /// Card type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Format)]
 pub enum CardType {
     SD1,
     SD2,
     SDHC,
 }
+
+/// Error type alias.
+type ErrorFor<T> = <T as DiskioDevice>::HardwareError;
 
 /// SD Card SPI driver.
 ///
@@ -111,12 +114,11 @@ where
     }
 
     /// Validate buffer for read/write.
-    fn validate_buffer(buf: &[u8]) -> Result<(), DiskioError<<Self as DiskioDevice>::DeviceError>> {
-        if buf.is_empty() || buf.len() % BLOCK_SIZE != 0 {
+    fn validate_buffer_len(buf_len: usize) -> Result<(), DiskioError<ErrorFor<Self>>> {
+        if buf_len == 0 || buf_len % BLOCK_SIZE != 0 {
             error!(
                 "SD invalid buffer, length: {}, block size: {}",
-                buf.len(),
-                BLOCK_SIZE
+                buf_len, BLOCK_SIZE
             );
             Err(DiskioError::InvalidArgument)
         } else {
@@ -125,7 +127,7 @@ where
     }
 
     /// Validate initialzed.
-    fn validate_initialized(&self) -> Result<(), DiskioError<<Self as DiskioDevice>::DeviceError>> {
+    fn validate_initialized(&self) -> Result<(), DiskioError<ErrorFor<Self>>> {
         if self.status.contains(StatusFlag::NotInitialized) {
             Err(DiskioError::NotInitialized)
         } else {
@@ -134,8 +136,8 @@ where
     }
 
     /// Get count of blocks in buffer.
-    fn get_block_count(buf: &[u8]) -> usize {
-        buf.len() / BLOCK_SIZE
+    fn get_block_count(buf_len: usize) -> usize {
+        buf_len / BLOCK_SIZE
     }
 
     /// Delay.
@@ -145,28 +147,28 @@ where
         }
     }
 
-    /// Convert address.
-    fn convert_adress(&self, address: Lba) -> u32 {
+    /// Convert lba.
+    fn convert_lba(&self, lba: Lba) -> u32 {
         match self.card_type {
-            CardType::SD1 | CardType::SD2 => (address as usize * BLOCK_SIZE) as u32,
-            CardType::SDHC => address as u32,
+            CardType::SD1 | CardType::SD2 => (lba as usize * BLOCK_SIZE) as u32,
+            CardType::SDHC => lba as u32,
         }
     }
 
     /// Activate chip select.
-    fn select(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn select(&self) -> Result<(), ErrorFor<Self>> {
         self.cs.borrow_mut().on().map_err(Error::SelectError)
     }
 
     /// Deactivate chip select.
-    fn unselect(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn unselect(&self) -> Result<(), ErrorFor<Self>> {
         self.cs.borrow_mut().off().map_err(Error::SelectError)
     }
 
     /// CS scope.
-    fn cs_scope<F>(&self, f: F) -> Result<(), <Self as DiskioDevice>::DeviceError>
+    fn cs_scope<F>(&self, f: F) -> Result<(), ErrorFor<Self>>
     where
-        F: FnOnce(&Self) -> Result<(), <Self as DiskioDevice>::DeviceError>,
+        F: FnOnce(&Self) -> Result<(), ErrorFor<Self>>,
     {
         self.select()?;
         let result = f(self);
@@ -176,9 +178,9 @@ where
     }
 
     /// CS scope mut.
-    fn cs_scope_mut<F>(&mut self, f: F) -> Result<(), <Self as DiskioDevice>::DeviceError>
+    fn cs_scope_mut<F>(&mut self, f: F) -> Result<(), ErrorFor<Self>>
     where
-        F: FnOnce(&mut Self) -> Result<(), <Self as DiskioDevice>::DeviceError>,
+        F: FnOnce(&mut Self) -> Result<(), ErrorFor<Self>>,
     {
         self.select()?;
         let result = f(self);
@@ -188,7 +190,7 @@ where
     }
 
     /// Send one byte and receive one byte.
-    fn transfer(&self, data: u8) -> Result<u8, <Self as DiskioDevice>::DeviceError> {
+    fn transfer(&self, data: u8) -> Result<u8, ErrorFor<Self>> {
         self.spi
             .borrow_mut()
             .transfer(&mut [data])
@@ -197,17 +199,17 @@ where
     }
 
     /// Receive a byte from the SD card by clocking in an 0xFF byte.
-    fn receive(&self) -> Result<u8, <Self as DiskioDevice>::DeviceError> {
+    fn receive(&self) -> Result<u8, ErrorFor<Self>> {
         self.transfer(Self::RECEIVE_TRANSFER_TOKEN)
     }
 
     /// Send a byte to the SD card.
-    fn send(&self, data: u8) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn send(&self, data: u8) -> Result<(), ErrorFor<Self>> {
         self.transfer(data).map(|_| ())
     }
 
     /// Receive a slice from the SD card.
-    fn receive_slice(&self, data: &mut [u8]) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn receive_slice(&self, data: &mut [u8]) -> Result<(), ErrorFor<Self>> {
         for byte in data.iter_mut() {
             *byte = self.receive()?;
         }
@@ -216,7 +218,7 @@ where
     }
 
     /// Send a slice to the SD card.
-    fn send_slice(&self, data: &[u8]) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn send_slice(&self, data: &[u8]) -> Result<(), ErrorFor<Self>> {
         for byte in data.iter() {
             self.send(*byte)?;
         }
@@ -225,7 +227,7 @@ where
     }
 
     /// Skip byte.
-    fn skip_byte(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn skip_byte(&self) -> Result<(), ErrorFor<Self>> {
         self.receive().map(|_| ())
     }
 
@@ -233,8 +235,8 @@ where
     fn wait_for_token<F: Fn(u8) -> bool>(
         &self,
         token_validator: F,
-        error: <Self as DiskioDevice>::DeviceError,
-    ) -> Result<u8, <Self as DiskioDevice>::DeviceError> {
+        error: ErrorFor<Self>,
+    ) -> Result<u8, ErrorFor<Self>> {
         for _ in 0..Config::CMD_MAX_ATTEMPTS {
             let token = self.receive()?;
 
@@ -249,7 +251,7 @@ where
     }
 
     /// Wait available state of card.
-    fn wait_available_state(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn wait_available_state(&self) -> Result<(), ErrorFor<Self>> {
         self.wait_for_token(
             |token| token == tokens::AVAILABLE,
             Error::TimeoutWaitAvailable,
@@ -258,11 +260,7 @@ where
     }
 
     /// Send command implementation.
-    fn send_command_impl(
-        &self,
-        cmd: u8,
-        arg: u32,
-    ) -> Result<R1Response, <Self as DiskioDevice>::DeviceError> {
+    fn send_command_impl(&self, cmd: u8, arg: u32) -> Result<R1Response, ErrorFor<Self>> {
         self.wait_available_state()?;
 
         let mut buf = [
@@ -275,7 +273,7 @@ where
         ];
         let crc_index = buf.len() - 1;
 
-        buf[crc_index] = (crc7(&buf[..crc_index]) << 1) | 1;
+        buf[crc_index] = (crc7(&buf[..crc_index]) << 1) | 0x01;
 
         self.send_slice(&buf)?;
 
@@ -295,11 +293,7 @@ where
     }
 
     /// Send command.
-    fn send_command(
-        &self,
-        cmd: u8,
-        arg: u32,
-    ) -> Result<R1Response, <Self as DiskioDevice>::DeviceError> {
+    fn send_command(&self, cmd: u8, arg: u32) -> Result<R1Response, ErrorFor<Self>> {
         if (cmd & commands::ACMD_FLAG) != 0 {
             self.send_command_impl(commands::CMD55, 0x0000_0000)?;
         }
@@ -308,7 +302,7 @@ where
     }
 
     /// Read data.
-    fn read_data(&self, data: &mut [u8]) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn read_data(&self, data: &mut [u8]) -> Result<(), ErrorFor<Self>> {
         if self.wait_for_token(|token| token != tokens::AVAILABLE, Error::TimeoutReadBuffer)?
             != tokens::DATA_START_BLOCK
         {
@@ -328,11 +322,7 @@ where
     }
 
     /// Write data.
-    fn write_data(
-        &self,
-        token: u8,
-        data: &[u8],
-    ) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn write_data(&self, token: u8, data: &[u8]) -> Result<(), ErrorFor<Self>> {
         let host_crc = crc16(data);
 
         self.send(token)?;
@@ -348,7 +338,7 @@ where
     }
 
     /// Enter SD to SPI mode.
-    fn enter_spi_mode(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn enter_spi_mode(&self) -> Result<(), ErrorFor<Self>> {
         for i in 0..Config::ENTER_SPI_MODE_ATTEMPTS {
             info!("Enter to SPI mode for SD, attempt: {}", i + 1);
 
@@ -370,7 +360,7 @@ where
     }
 
     /// Enable CRC.
-    fn enable_crc(&self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn enable_crc(&self) -> Result<(), ErrorFor<Self>> {
         info!("Enabling CRC for SD");
 
         if self.send_command(commands::CMD59, 0x0000_0001)? != R1Response::IN_IDLE_STATE {
@@ -381,7 +371,7 @@ where
     }
 
     /// Verify SD Memory Card interface operating condition.
-    fn send_if_cond(&self) -> Result<CardType, <Self as DiskioDevice>::DeviceError> {
+    fn send_if_cond(&self) -> Result<CardType, ErrorFor<Self>> {
         info!("Verifing SD Memory Card interface operating condition");
 
         for _ in 0..Config::CMD_MAX_ATTEMPTS {
@@ -402,7 +392,7 @@ where
     }
 
     /// Sends host capacity support information and activates.
-    fn send_op_comd(&self, arg: u32) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn send_op_comd(&self, arg: u32) -> Result<(), ErrorFor<Self>> {
         info!("Sending host capacity support information and activates");
 
         for _ in 0..Config::CMD_MAX_ATTEMPTS {
@@ -415,7 +405,7 @@ where
     }
 
     /// Check SD type.
-    fn check_type(&self) -> Result<CardType, <Self as DiskioDevice>::DeviceError> {
+    fn check_type(&self) -> Result<CardType, ErrorFor<Self>> {
         info!("Checking SD type");
 
         let mut card_type = self.send_if_cond()?;
@@ -444,7 +434,7 @@ where
     }
 
     /// Read CSD.
-    fn read_csd(&self) -> Result<Csd, <Self as DiskioDevice>::DeviceError> {
+    fn read_csd(&self) -> Result<Csd, ErrorFor<Self>> {
         let mut csd_data: CsdData = Default::default();
 
         if self.send_command(commands::CMD9, 0x0000_0000)? != R1Response::READY_STATE {
@@ -460,7 +450,7 @@ where
     }
 
     /// Initialize SD.
-    fn init(&mut self) -> Result<(), <Self as DiskioDevice>::DeviceError> {
+    fn init(&mut self) -> Result<(), ErrorFor<Self>> {
         info!("SD initialize started");
 
         self.unselect()?;
@@ -483,7 +473,7 @@ where
             Ok(_) => {
                 info!(
                     "SD successfully initialized, version: {}, capacity: {}",
-                    defmt::Debug2Format(&self.card_type),
+                    &self.card_type,
                     defmt::Debug2Format(&self.csd.card_capacity())
                 );
                 Status::default()
@@ -505,7 +495,7 @@ where
     Spi::Error: core::fmt::Debug,
     Cs::Error: core::fmt::Debug,
 {
-    type DeviceError = Error<Spi::Error, Cs::Error>;
+    type HardwareError = Error<Spi::Error, Cs::Error>;
 
     fn status(&self) -> Status {
         self.status
@@ -516,28 +506,28 @@ where
         self.status = StatusFlag::NotInitialized.into();
     }
 
-    fn initialize(&mut self) -> Result<(), DiskioError<Self::DeviceError>> {
+    fn initialize(&mut self) -> Result<(), DiskioError<Self::HardwareError>> {
         if !self.status.contains(StatusFlag::NotInitialized) {
             warn!("SD already is initialized");
             return Err(DiskioError::AlreadyInitialized);
         }
 
-        self.init().map_err(DiskioError::Device)
+        self.init().map_err(DiskioError::Hardware)
     }
 
-    fn read(&self, buf: &mut [u8], address: Lba) -> Result<(), DiskioError<Self::DeviceError>> {
-        Self::validate_buffer(buf)?;
+    fn read(&self, buf: &mut [u8], lba: Lba) -> Result<(), DiskioError<Self::HardwareError>> {
+        Self::validate_buffer_len(buf.len())?;
         self.validate_initialized()?;
 
-        let block_count = Self::get_block_count(buf);
-        let address = self.convert_adress(address);
+        let block_count = Self::get_block_count(buf.len());
+        let lba = self.convert_lba(lba);
 
         self.cs_scope(|s| {
             if block_count == 1 {
-                s.send_command(commands::CMD17, address)?;
+                s.send_command(commands::CMD17, lba)?;
                 s.read_data(buf)?;
             } else {
-                s.send_command(commands::CMD18, address)?;
+                s.send_command(commands::CMD18, lba)?;
                 for chunk in buf.chunks_mut(BLOCK_SIZE) {
                     s.read_data(chunk)?;
                 }
@@ -546,19 +536,19 @@ where
 
             Ok(())
         })
-        .map_err(DiskioError::Device)
+        .map_err(DiskioError::Hardware)
     }
 
-    fn write(&self, buf: &[u8], address: Lba) -> Result<(), DiskioError<Self::DeviceError>> {
-        Self::validate_buffer(buf)?;
+    fn write(&self, buf: &[u8], lba: Lba) -> Result<(), DiskioError<Self::HardwareError>> {
+        Self::validate_buffer_len(buf.len())?;
         self.validate_initialized()?;
 
-        let block_count = Self::get_block_count(buf);
-        let address = self.convert_adress(address);
+        let block_count = Self::get_block_count(buf.len());
+        let lba = self.convert_lba(lba);
 
         self.cs_scope(|s| {
             if block_count == 1 {
-                s.send_command(commands::CMD24, address)?;
+                s.send_command(commands::CMD24, lba)?;
                 s.write_data(tokens::DATA_START_BLOCK, buf)?;
                 s.wait_available_state()?;
                 if s.send_command(commands::CMD13, 0x0000_0000)? != R1Response::READY_STATE {
@@ -568,7 +558,7 @@ where
                     return Err(Error::WriteError);
                 }
             } else {
-                s.send_command(commands::CMD25, address)?;
+                s.send_command(commands::CMD25, lba)?;
                 for block in buf.chunks(BLOCK_SIZE) {
                     s.wait_available_state()?;
                     self.write_data(tokens::WRITE_MULTIPLE, block)?;
@@ -579,12 +569,12 @@ where
 
             Ok(())
         })
-        .map_err(DiskioError::Device)
+        .map_err(DiskioError::Hardware)
     }
 
-    fn ioctl(&self, cmd: IoctlCmd) -> Result<(), DiskioError<Self::DeviceError>> {
+    fn ioctl(&self, cmd: IoctlCmd) -> Result<(), DiskioError<Self::HardwareError>> {
         match cmd {
-            IoctlCmd::CtrlSync => self.wait_available_state().map_err(DiskioError::Device),
+            IoctlCmd::CtrlSync => self.wait_available_state().map_err(DiskioError::Hardware),
             IoctlCmd::GetBlockSize(block_size) => {
                 *block_size = BLOCK_SIZE;
                 Ok(())

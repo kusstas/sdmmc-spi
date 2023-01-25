@@ -7,7 +7,7 @@ repository = "https://github.com/kusstas/sdmmc-spi"
 documentation = "https://docs.rs/crate/sdmmc-spi"
 categories = ["embedded", "hardware-support", "no-std"]
 keywords = ["embedded-hal", "embedded-hal-driver", "sdmmc", "sdcard", "spi"]
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 exclude = [
@@ -19,7 +19,7 @@ exclude = [
 [dependencies]
 bitfield = "^0.14.0"
 defmt = "^0.3.2"
-diskio = "^0.1.1"
+diskio = "^0.1.2"
 embedded-hal = "^0.2.7"
 size = { version = "^0.4.1", default-features = false }
 switch-hal = "^0.4.0"
